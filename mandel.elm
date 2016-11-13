@@ -31,16 +31,17 @@ type alias Model =
   }
 
 init =
-  ( Model -0.0 -0.0 2.0 1.5 100 100
+  ( Model -1.5 -1 1.0 1 100 100
   , Task.perform (\_ -> NoOp) DimsMsg Window.size)
+
+
+-- UPDATE
+charSize = 4
 
 type Msg
     = KeyMsg Keyboard.KeyCode
     | DimsMsg { width: Int, height: Int }
     | NoOp
-
--- UPDATE
-
 
 type Move
   = Up
@@ -53,7 +54,7 @@ update: Msg -> Model -> (Model, Cmd Msg)
 update action model =
   case action of
     KeyMsg code -> (moveModel model (keyToMv code), Cmd.none)
-    DimsMsg { width, height } -> ({ model | xBound = width , yBound = height }, Cmd.none)
+    DimsMsg { width, height } -> ({ model | xBound = width, yBound = height }, Cmd.none)
     NoOp -> (model, Cmd.none)
 
 stepDist: (Int, Int) -> Vec -> Vec -> Vec
@@ -112,6 +113,11 @@ keyToMv keyCode =
     'D' -> Right
     _ -> NoDirection
 
+
+-- VIEW
+
+
+
 square: Vec -> Vec
 square (x, y) =
   (x^2 - y^2, 2*x*y)
@@ -144,12 +150,12 @@ mandelIterations (i, j) (iN, jN) (x0, y0) (x1, y1) =
     (xRatio, yRatio) = ((toFloat i) / (toFloat iN), (toFloat j) / (toFloat jN))
     (x, y) = (x0 + (x1 - x0)*xRatio, y0 + (y1 - y0)*yRatio)
   in
-    getIterations (x, y) 100
+    getIterations (x, y) 1000
 
 
 stepCount: Int -> Int
 stepCount bound =
-  floor (toFloat bound / 10)
+  floor (toFloat bound / charSize)
 
 map2D: (a -> b) -> List (List a) -> List (List b)
 map2D mapper mandel =
@@ -172,8 +178,6 @@ mandelbrot (x0, y1) (x1, y0) (w, h) =
       (\(xN, yN) -> mandelIterations (xN, yN) (xSteps, ySteps) (x0, y0) (x1, y1))
       (create2D (xSteps, ySteps))
 
--- VIEW
-
 
 view : Model -> Html Msg
 view model =
@@ -182,30 +186,45 @@ view model =
       [ ("font-family", "Courier")
       , ("background-color", "black")
       , ("color", "white")
-      , ("font-size", "10px")
-      -- , ("font-spacing", "0")
-      -- , ("line-height", "0.8")
+      , ("font-size", pxString charSize)
+      , ("position", "absolute")
+      , ("top", "0")
+      , ("left", "0")
+      , ("bottom", "0")
+      , ("right", "0")
+      , ("overflow", "hidden")
       ]
     ]
     (List.map
-      viewRow
+      (viewRow (model.xBound, model.yBound))
       (mandelbrot
         (model.x0, model.y0)
         (model.x1, model.y1)
         (model.xBound, model.yBound))
     )
 
--- viewRow: List Int -> Html
-viewRow row =
-  div
-    [ style
-      [ ("min-height", "9.6px")
-      , ("max-height", "9.6px")
-      ]
-    ]
-    (List.map viewPixel row)
+pxString: Float -> String
+pxString x =
+  toString x ++ "px"
 
--- viewPixel: Int -> Html
+distToStr: Int -> String
+distToStr bound =
+  pxString (toFloat bound / (toFloat (stepCount bound)))
+
+viewRow: (Int, Int) -> List Int -> Html Msg
+viewRow (xBound, yBound) row =
+  let
+    (w, h) = (distToStr xBound, distToStr yBound)
+  in
+    div
+      [ style
+        [ ("min-height", h)
+        , ("max-height", h)
+        , ("overflow", "hidden")
+        ]
+      ]
+      (List.map (viewPixel w h) row)
+
 pixelWrapper: String -> String -> String -> Html Msg
 pixelWrapper w h pixel =
   span [ style
@@ -216,13 +235,13 @@ pixelWrapper w h pixel =
     , ("max-height", h)]]
   [ text pixel ]
 
-viewPixel pixel =
-  pixelWrapper "9.6px" "9.6px" (
-    if pixel > 99 then
+viewPixel w h pixel =
+  pixelWrapper w h (
+    if pixel > 999 then
       "#"
-    else if pixel > 15 then
+    else if pixel > 500 then
       "X"
-    else if pixel > 7 then
+    else if pixel > 5 then
       "+"
     else if pixel > 2 then
       "~"
