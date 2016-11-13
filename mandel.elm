@@ -272,7 +272,11 @@ update action model =
       , Cmd.none
       )
     DimsMsg { width, height } ->
-      ( updateGridAndCache { model | xBound = width, yBound = height }
+      ( updateGridAndCache { model |
+        xBound = width,
+        yBound = height,
+        iterationMap = Dict.empty    
+      }
       , Cmd.none
       )
     NoOp -> (model, Cmd.none)
