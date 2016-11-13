@@ -6,6 +6,7 @@ import Keyboard
 import Char
 import Window
 import Task
+import Dict exposing (Dict)
 
 main =
   program
@@ -21,6 +22,15 @@ main =
 type alias Vec =
   (Float, Float)
 
+type alias IntVec =
+  (Int, Int)
+
+type alias Grid a =
+  List (List a)
+
+type alias IterationMap =
+  Dict Vec Int
+
 type alias Model =
   { x0: Float
   , y0: Float
@@ -28,15 +38,61 @@ type alias Model =
   , y1: Float
   , xBound: Int
   , yBound: Int
+  , coordinateGrid: Grid Vec
+  , iterationMap: IterationMap
   }
 
-init =
-  ( Model -1.5 -1 1.0 1 100 100
-  , Task.perform (\_ -> NoOp) DimsMsg Window.size)
+
+
+init =( {
+    x0 = -1.5,
+    y0 = -1,
+    x1 = 1.5,
+    y1 = 1,
+    xBound = 0,
+    yBound = 0,
+    coordinateGrid = [[]],
+    iterationMap = Dict.empty
+  },
+  Task.perform (\_ -> NoOp) DimsMsg Window.size)
+
+
+
+-- MATH
+
+
+square: Vec -> Vec
+square (x, y) =
+  (x^2 - y^2, 2*x*y)
+
+add: Vec -> Vec -> Vec
+add (x1, y1) (x2, y2) =
+  (x1 + x2, y1 + y2)
+
+next: Vec -> Vec -> Vec
+next last c = add (square last) c
+
+size: Vec -> Float
+size (x, y) =
+  x^2 + y^2
+
+getIterationsIt: Vec -> Vec -> Int -> Int -> Int
+getIterationsIt x c iteration maxIterations =
+  if iteration == maxIterations || size x > 2 then
+    iteration
+  else
+    getIterationsIt (next x c) c (iteration + 1) maxIterations
+
+getIterations: Int -> Vec -> Int
+getIterations maxIterations c =
+  getIterationsIt (0, 0) c 0 maxIterations
+
 
 
 -- UPDATE
-charSize = 4
+
+
+charSize = 60
 
 type Msg
     = KeyMsg Keyboard.KeyCode
@@ -50,12 +106,82 @@ type Move
   | Right
   | NoDirection
 
-update: Msg -> Model -> (Model, Cmd Msg)
-update action model =
-  case action of
-    KeyMsg code -> (moveModel model (keyToMv code), Cmd.none)
-    DimsMsg { width, height } -> ({ model | xBound = width, yBound = height }, Cmd.none)
-    NoOp -> (model, Cmd.none)
+
+
+createGrid: IntVec -> Grid IntVec
+createGrid (xN, yN) =
+  List.map
+  (\y -> List.map (\x -> (x, y)) [0..xN])
+  [0..yN]
+
+
+mapGrid: (a -> b) -> Grid a -> Grid b
+mapGrid mapper mandel =
+  List.map
+    (\row -> (List.map (\point -> mapper point)) row)
+    mandel
+
+
+createCoodinatesGrid: Vec -> Vec -> (Int, Int) -> List (List Vec)
+createCoodinatesGrid (x0, y1) (x1, y0) (w, h) =
+  let
+    (xNTotal, yNTotal) = (stepCount w, stepCount h)
+
+  in
+    mapGrid
+      (\(xN, yN) ->
+        (
+          let
+            (xRatio, yRatio) =
+              ( (toFloat xN) / (toFloat xNTotal)
+              , (toFloat yN) / (toFloat yNTotal))
+          in
+            (x0 + (x1 - x0) * xRatio, y0 + (y1 - y0) * yRatio)
+        )
+      )
+      (createGrid (xNTotal, yNTotal))
+
+reduceGrid: (a -> b -> b) -> b -> Grid a -> b
+reduceGrid reducer init grid =
+  List.foldl
+    (\row -> \out -> (List.foldl reducer out row))
+    init
+    grid
+
+refreashIterationMap: IterationMap -> Grid Vec -> (Vec -> Int) -> IterationMap
+refreashIterationMap iterationMap grid getIterations =
+  reduceGrid
+    (\point -> \iterationMap ->
+        case Dict.get point iterationMap of
+          Just _ -> iterationMap
+
+          Nothing -> Dict.insert point (Debug.log "p:" (getIterations point)) iterationMap
+    )
+    iterationMap
+    grid
+
+
+
+updateGridAndCache: Model -> Model
+updateGridAndCache model  =
+  let
+    { x0, y0, x1, y1, xBound, yBound, coordinateGrid, iterationMap } = model
+
+    newCoordinateGrid = createCoodinatesGrid (x0, y0) (x1, y1) (xBound, yBound)
+  in
+    { model |
+      coordinateGrid = newCoordinateGrid,
+      iterationMap = refreashIterationMap
+        iterationMap
+        newCoordinateGrid
+        (getIterations 50)
+    }
+
+
+stepCount: Int -> Int
+stepCount bound =
+  floor (toFloat bound / charSize)
+
 
 stepDist: (Int, Int) -> Vec -> Vec -> Vec
 stepDist (w, h) (x0, y0) (x1, y1) =
@@ -99,6 +225,21 @@ moveModel model action =
       NoDirection ->
         model
 
+
+update: Msg -> Model -> (Model, Cmd Msg)
+update action model =
+  case action of
+    KeyMsg code ->
+      ( updateGridAndCache(moveModel model (keyToMv code))
+      , Cmd.none
+      )
+    DimsMsg { width, height } ->
+      ( updateGridAndCache { model | xBound = width, yBound = height }
+      , Cmd.none
+      )
+    NoOp -> (model, Cmd.none)
+
+
 showKey keyCode =
   let
     str = Debug.log (toString (Char.fromCode keyCode))
@@ -115,72 +256,18 @@ keyToMv keyCode =
 
 
 -- VIEW
+iterationGrid: Grid Vec -> IterationMap -> Grid Int
+iterationGrid grid iterationMap =
+  mapGrid
+    (\point -> case Dict.get point iterationMap of
+      Just iterationNumber -> iterationNumber
 
-
-
-square: Vec -> Vec
-square (x, y) =
-  (x^2 - y^2, 2*x*y)
-
-add: Vec -> Vec -> Vec
-add (x1, y1) (x2, y2) =
-  (x1 + x2, y1 + y2)
-
-next: Vec -> Vec -> Vec
-next last c = add (square last) c
-
-size: Vec -> Float
-size (x, y) =
-  x^2 + y^2
-
-getIterationsIt: Vec -> Vec -> Int -> Int -> Int
-getIterationsIt x c iteration maxIterations =
-  if iteration == maxIterations || size x > 2 then
-    iteration
-  else
-    getIterationsIt (next x c) c (iteration + 1) maxIterations
-
-getIterations: Vec -> Int -> Int
-getIterations c maxIterations =
-  getIterationsIt (0, 0) c 0 maxIterations
-
-mandelIterations: (Int, Int) -> (Int, Int) -> Vec -> Vec -> Int
-mandelIterations (i, j) (iN, jN) (x0, y0) (x1, y1) =
-  let
-    (xRatio, yRatio) = ((toFloat i) / (toFloat iN), (toFloat j) / (toFloat jN))
-    (x, y) = (x0 + (x1 - x0)*xRatio, y0 + (y1 - y0)*yRatio)
-  in
-    getIterations (x, y) 1000
-
-
-stepCount: Int -> Int
-stepCount bound =
-  floor (toFloat bound / charSize)
-
-map2D: (a -> b) -> List (List a) -> List (List b)
-map2D mapper mandel =
-  List.map
-    (\row -> (List.map (\point -> mapper point)) row)
-    mandel
-
-create2D: (Int, Int) -> List (List (Int, Int))
-create2D (xN, yN) =
-    List.map
-      (\y -> List.map (\x -> (x, y)) [0..xN])
-      [0..yN]
-
-mandelbrot: Vec -> Vec -> (Int, Int) -> List (List Int)
-mandelbrot (x0, y1) (x1, y0) (w, h) =
-  let
-    (xSteps, ySteps) = (stepCount w, stepCount h)
-  in
-    map2D
-      (\(xN, yN) -> mandelIterations (xN, yN) (xSteps, ySteps) (x0, y0) (x1, y1))
-      (create2D (xSteps, ySteps))
-
+      Nothing -> -1
+    )
+    grid
 
 view : Model -> Html Msg
-view model =
+view { xBound, yBound, coordinateGrid, iterationMap } =
   div
     [ style
       [ ("font-family", "Courier")
@@ -196,11 +283,8 @@ view model =
       ]
     ]
     (List.map
-      (viewRow (model.xBound, model.yBound))
-      (mandelbrot
-        (model.x0, model.y0)
-        (model.x1, model.y1)
-        (model.xBound, model.yBound))
+      (viewRow (xBound, yBound))
+      (iterationGrid coordinateGrid iterationMap)
     )
 
 pxString: Float -> String
@@ -237,16 +321,18 @@ pixelWrapper w h pixel =
 
 viewPixel w h pixel =
   pixelWrapper w h (
-    if pixel > 999 then
+    if pixel > 49 then
       "#"
-    else if pixel > 500 then
+    else if pixel > 14 then
       "X"
     else if pixel > 5 then
       "+"
-    else if pixel > 2 then
+    else if pixel > 1 then
       "~"
-    else
+    else if pixel > 0 then
       "`"
+    else
+      "!"
   )
 
 
