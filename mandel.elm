@@ -104,7 +104,7 @@ getIterations origin d maxIterations c =
 -- UPDATE
 
 
-charSize = 12
+charSize = 14
 
 type Msg
     = KeyMsg Keyboard.KeyCode
@@ -117,8 +117,8 @@ type Move
   | Left
   | Right
   | NoDirection
-
-
+  | ZoomIn
+  | ZoomOut
 
 createGrid: IntVec -> Grid IntVec
 createGrid (xN, yN) =
@@ -131,6 +131,12 @@ mapGrid: (a -> b) -> Grid a -> Grid b
 mapGrid mapper mandel =
   List.map
     (\row -> (List.map (\point -> mapper point)) row)
+    mandel
+
+indexedMapGrid: (IntVec -> a -> b) -> Grid a -> Grid b
+indexedMapGrid mapper mandel =
+  List.indexedMap
+    (\j -> \row -> (List.indexedMap (\i ->\ point -> mapper (i, j) point)) row)
     mandel
 
 
@@ -209,6 +215,7 @@ moveModel model action =
         (model.xBound, model.yBound)
         (model.x0, model.y0)
         (model.x1, model.y1)
+    { x0, y0, x1, y1, ofsetX, ofsetY } = model
   in
     case action of
       Up ->
@@ -221,12 +228,38 @@ moveModel model action =
       }
       Left ->
         { model |
-          ofsetX = model.ofsetX - 1
+          ofsetX = model.ofsetX + 1
       }
       Right ->
         { model |
-          ofsetX = model.ofsetX + 1
+          ofsetX = model.ofsetX - 1
       }
+      ZoomIn ->
+        let
+          (xStep, yStep) = ((x1 - x0) / 4, (y1 - y0) / 4)
+        in
+          { model |
+            ofsetX = Debug.log "ofsetX" ofsetX * 2,
+            ofsetY = ofsetY * 2,
+            x0 = x0 + xStep,
+            x1 = x1 - xStep,
+            y0 = y0 + yStep,
+            y1 = y1 - yStep,
+            iterationMap = Dict.empty
+          }
+      ZoomOut ->
+        let
+          (xStep, yStep) = ((x1 - x0) / 4, (y1 - y0) / 4)
+        in
+          { model |
+            ofsetX = floor (toFloat ofsetX / 2),
+            ofsetY = floor (toFloat ofsetY / 2),
+            x0 = x0 - xStep,
+            x1 = x1 + xStep,
+            y0 = y0 - yStep,
+            y1 = y1 + yStep,
+            iterationMap = Dict.empty
+          }
       NoDirection ->
         model
 
@@ -257,17 +290,27 @@ keyToMv keyCode =
     'S' -> Down
     'A' -> Left
     'D' -> Right
+    'Q' -> ZoomIn
+    'E' -> ZoomOut
     _ -> NoDirection
 
 
 -- VIEW
 iterationGrid: Grid IntVec -> IterationMap -> Grid Int
 iterationGrid grid iterationMap =
-  mapGrid
-    (\point -> case Dict.get point iterationMap of
-      Just iterationNumber -> iterationNumber
+  indexedMapGrid
+    (\(i, j) -> \point -> case (i, j) of
+      (1, 1) -> -1
+      (3, 1) -> -2
+      (5, 1) -> -3
+      (1, 3) -> -4
+      (3, 3) -> -5
+      (5, 3) -> -6
+      _ ->
+        case Dict.get point iterationMap of
+          Just iterationNumber -> iterationNumber
 
-      Nothing -> -1
+          Nothing -> -1
     )
     grid
 
@@ -327,9 +370,13 @@ pixelWrapper w h pixel =
 viewPixel w h pixel =
   pixelWrapper w h (
     if pixel > 499 then
-      "#"
+      "@"
+    else if pixel > 35 then
+      "$"
+    else if pixel > 25 then
+      "&"
     else if pixel > 13 then
-      "X"
+      "#"
     else if pixel > 2 then
       "+"
     else if pixel > 1 then
@@ -337,17 +384,17 @@ viewPixel w h pixel =
     else if pixel > 0 then
       "`"
     else if pixel == -1 then
-      "W"
-    else if pixel == -2 then
-      "S"
-    else if pixel == -3 then
-      "A"
-    else if pixel == -4 then
-      "D"
-    else if pixel == -5 then
       "Q"
-    else if pixel == -6 then
+    else if pixel == -2 then
+      "W"
+    else if pixel == -3 then
       "E"
+    else if pixel == -4 then
+      "A"
+    else if pixel == -5 then
+      "S"
+    else if pixel == -6 then
+      "D"
     else
       "!"
   )
