@@ -29,16 +29,18 @@ type alias Grid a =
   List (List a)
 
 type alias IterationMap =
-  Dict Vec Int
+  Dict IntVec Int
 
 type alias Model =
   { x0: Float
   , y0: Float
   , x1: Float
   , y1: Float
+  , ofsetX: Int
+  , ofsetY: Int
   , xBound: Int
   , yBound: Int
-  , coordinateGrid: Grid Vec
+  , coordinateGrid: Grid IntVec
   , iterationMap: IterationMap
   }
 
@@ -49,6 +51,8 @@ init =( {
     y0 = -1,
     x1 = 1.5,
     y1 = 1,
+    ofsetX = 0,
+    ofsetY = 0,
     xBound = 0,
     yBound = 0,
     coordinateGrid = [[]],
@@ -83,16 +87,24 @@ getIterationsIt x c iteration maxIterations =
   else
     getIterationsIt (next x c) c (iteration + 1) maxIterations
 
-getIterations: Int -> Vec -> Int
-getIterations maxIterations c =
-  getIterationsIt (0, 0) c 0 maxIterations
+mapPoint: Vec -> Vec -> IntVec -> Vec
+mapPoint (x0, y0) (xd, yd) (xi, yi) =
+  (x0 + xd * (toFloat xi), y0 + yd * (toFloat yi))
+
+getIterations: Vec -> Vec -> Int -> IntVec -> Int
+getIterations origin d maxIterations c =
+  getIterationsIt
+    (0, 0)
+    (mapPoint origin d c)
+    0
+    maxIterations
 
 
 
 -- UPDATE
 
 
-charSize = 60
+charSize = 12
 
 type Msg
     = KeyMsg Keyboard.KeyCode
@@ -122,22 +134,15 @@ mapGrid mapper mandel =
     mandel
 
 
-createCoodinatesGrid: Vec -> Vec -> (Int, Int) -> List (List Vec)
-createCoodinatesGrid (x0, y1) (x1, y0) (w, h) =
+createCoodinatesGrid: Vec -> Vec -> IntVec -> IntVec -> Grid IntVec
+createCoodinatesGrid (x0, y1) (x1, y0) (ofsetX, ofsetY) (w, h) =
   let
     (xNTotal, yNTotal) = (stepCount w, stepCount h)
 
   in
     mapGrid
-      (\(xN, yN) ->
-        (
-          let
-            (xRatio, yRatio) =
-              ( (toFloat xN) / (toFloat xNTotal)
-              , (toFloat yN) / (toFloat yNTotal))
-          in
-            (x0 + (x1 - x0) * xRatio, y0 + (y1 - y0) * yRatio)
-        )
+      (\(xN, yN) -> (xN - ofsetX, yN - ofsetY)
+
       )
       (createGrid (xNTotal, yNTotal))
 
@@ -148,7 +153,7 @@ reduceGrid reducer init grid =
     init
     grid
 
-refreashIterationMap: IterationMap -> Grid Vec -> (Vec -> Int) -> IterationMap
+refreashIterationMap: IterationMap -> Grid IntVec -> (IntVec -> Int) -> IterationMap
 refreashIterationMap iterationMap grid getIterations =
   reduceGrid
     (\point -> \iterationMap ->
@@ -165,16 +170,20 @@ refreashIterationMap iterationMap grid getIterations =
 updateGridAndCache: Model -> Model
 updateGridAndCache model  =
   let
-    { x0, y0, x1, y1, xBound, yBound, coordinateGrid, iterationMap } = model
-
-    newCoordinateGrid = createCoodinatesGrid (x0, y0) (x1, y1) (xBound, yBound)
+    { x0, y0, x1, y1, xBound, yBound, coordinateGrid, iterationMap, ofsetX, ofsetY } = model
+    newCoordinateGrid = createCoodinatesGrid (x0, y0) (x1, y1) (ofsetX, ofsetY) (xBound, yBound)
+    (xNTotal, yNTotal) = (stepCount xBound, stepCount yBound)
+    (xd, yd) =
+      ( (x1 - x0) / toFloat xNTotal
+      , (y1 - y0) / toFloat yNTotal
+      )
   in
     { model |
       coordinateGrid = newCoordinateGrid,
       iterationMap = refreashIterationMap
         iterationMap
         newCoordinateGrid
-        (getIterations 50)
+        (getIterations (x0, y0) (xd, yd) 500)
     }
 
 
@@ -204,23 +213,19 @@ moveModel model action =
     case action of
       Up ->
         { model |
-          y0 = model.y0 + yd,
-          y1 = model.y1 + yd
+          ofsetY = model.ofsetY + 1
       }
       Down ->
         { model |
-          y0 = model.y0 - yd,
-          y1 = model.y1 - yd
+          ofsetY = model.ofsetY - 1
       }
       Left ->
         { model |
-          x0 = model.x0 - xd,
-          x1 = model.x1 - xd
+          ofsetX = model.ofsetX - 1
       }
       Right ->
         { model |
-          x0 = model.x0 + xd,
-          x1 = model.x1 + xd
+          ofsetX = model.ofsetX + 1
       }
       NoDirection ->
         model
@@ -256,7 +261,7 @@ keyToMv keyCode =
 
 
 -- VIEW
-iterationGrid: Grid Vec -> IterationMap -> Grid Int
+iterationGrid: Grid IntVec -> IterationMap -> Grid Int
 iterationGrid grid iterationMap =
   mapGrid
     (\point -> case Dict.get point iterationMap of
@@ -321,16 +326,28 @@ pixelWrapper w h pixel =
 
 viewPixel w h pixel =
   pixelWrapper w h (
-    if pixel > 49 then
+    if pixel > 499 then
       "#"
-    else if pixel > 14 then
+    else if pixel > 13 then
       "X"
-    else if pixel > 5 then
+    else if pixel > 2 then
       "+"
     else if pixel > 1 then
       "~"
     else if pixel > 0 then
       "`"
+    else if pixel == -1 then
+      "W"
+    else if pixel == -2 then
+      "S"
+    else if pixel == -3 then
+      "A"
+    else if pixel == -4 then
+      "D"
+    else if pixel == -5 then
+      "Q"
+    else if pixel == -6 then
+      "E"
     else
       "!"
   )
